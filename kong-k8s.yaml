@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    k8s-app: kong-database
+  name: kong-database
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      k8s-app: kong-database
+  template:
+    metadata:
+      labels:
+        k8s-app: kong-database
+    spec:
+      containers:
+      - env:
+        - name: POSTGRES_USER
+          value: kong
+        - name: POSTGRES_DB
+          value: kong
+        - name: POSTGRES_PASSWORD
+          value: kong
+        image: postgres:9.5
+        imagePullPolicy: IfNotPresent
+        name: kong-database
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 250m
+            memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong-database
+  namespace: default
+spec:
+  clusterIP: None
+  ports:
+  - name: 5432-5432-tcp
+    port: 5432
+    protocol: TCP
+    targetPort: 5432
+  selector:
+    k8s-app: kong-database
+  type: ClusterIP
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kong-migration
+  namespace: default
+spec:
+  template:
+    spec:
+      containers:
+      - env:
+        - name: KONG_DATABASE
+          value: postgres
+        - name: KONG_PG_HOST
+          value: kong-database
+        - name: KONG_PG_DATABASE
+          value: kong
+        - name: KONG_PG_USER
+          value: kong
+        - name: KONG_PG_PASSWORD
+          value: kong
+        name: kong-migration
+        image: kong:2.1
+        command: ["kong",  "migrations", "bootstrap"]
+      restartPolicy: Never
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kong
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      k8s-app: kong
+  template:
+    metadata:
+      labels:
+        k8s-app: kong
+    spec:
+      containers:
+      - env:
+        - name: KONG_DATABASE
+          value: postgres
+        - name: KONG_PG_HOST
+          value: kong-database
+        - name: KONG_PG_DATABASE
+          value: kong
+        - name: KONG_PG_USER
+          value: kong
+        - name: KONG_PG_PASSWORD
+          value: kong
+        name: kong
+        image: kong:2.1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong
+  namespace: default
+spec:
+  ports:
+  - name: 80-80-tcp
+    protocol: TCP
+    port: 8000
+    targetPort: 8000
+    nodePort: 30265
+  selector:
+    k8s-app: kong
+  type: NodePort
